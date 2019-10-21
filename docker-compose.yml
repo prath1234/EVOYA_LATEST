@@ -1,7 +1,85 @@
 version: '3'
-services: 
-    search-service:
-      build: 
-        context: .
-      ports:
-        - "8080:8080"  
+networks:
+  persistent_network:
+    driver: bridge
+services:
+  mssql-server:
+    image: microsoft/mssql-server-linux
+    container_name: mssql-server
+    networks:
+      - persistent_network
+    restart: unless-stopped
+    environment:
+      - "ACCEPT_EULA=Y"
+      - "SA_PASSWORD=mssqlServer1433"
+    ports:
+      - "1433:1433"
+    volumes:
+      - "./mssql/data:/var/opt/mssql/data"
+  consul:
+    build:
+      context: ./consul
+      dockerfile: Dockerfile
+    container_name: consul
+    networks:
+      - persistent_network
+    restart: unless-stopped
+    ports:
+      - 8500:8500
+    command: agent -server -bind 0.0.0.0 -client 0.0.0.0 -bootstrap-expect 1 -config-file=/consul/config/config.json
+    volumes:
+      - ./consul/config/consul-config.json:/consul/config/config.json
+      - ./consul/data:/consul/data
+    depends_on:
+      - mssql-server
+  analysisservice:
+    image: "docker.io/mavericsystems/analysisservice"
+    container_name: analysisservice
+    restart: unless-stopped
+    networks:
+      - persistent_network
+    ports:
+      - "9090:8080"
+    environment:
+      - dbname=test
+      - SERVER_IP=192.168.56.111
+      - CONSUL_IP=192.168.56.111
+      - DEBUG=*
+    depends_on:
+      - mssql-server
+      - configserver
+      - consul
+  configserver:
+    image: "docker.io/mavericsystems/configserver"
+    container_name: configserver
+    restart: unless-stopped
+    networks:
+      - persistent_network
+    ports:
+      - "9091:8080"
+    environment:
+      - dbname=test
+      - SERVER_IP=192.168.56.111
+      - CONSUL_IP=192.168.56.111
+      - DEBUG=*
+    depends_on:
+      - mssql-server
+      - consul
+  searchservice:
+    image: "docker.io/mavericsystems/searchservice:latest"
+    container_name: searchservice
+    restart: unless-stopped
+    networks:
+      - persistent_network
+    ports:
+      - "9092:8080"
+    environment:
+      - dbname=test
+      - SERVER_IP=192.168.56.111
+      - CONSUL_IP=192.168.56.111
+      - DEBUG=*
+    depends_on:
+      - mssql-server
+      - configserver
+      - consul
+
